@@ -537,18 +537,16 @@ public abstract class GenericParser<AdditionalStateT> extends Tokenizer {
         this.expect(TokenType.LPAREN);
         ArrayList<BindingBindingWithDefault> items = new ArrayList<>();
         Binding rest = null;
-        if (!this.match(TokenType.RPAREN)) {
-            while (!this.eof()) {
-                if (this.eat(TokenType.ELLIPSIS)) {
-                    rest = parseBindingTarget();
-                    break;
-                }
-                items.add(this.parseParam());
-                if (this.match(TokenType.RPAREN)) {
-                    break;
-                }
-                this.expect(TokenType.COMMA);
+        while (!this.match(TokenType.RPAREN)) {
+            if (this.eat(TokenType.ELLIPSIS)) {
+                rest = this.parseBindingTarget();
+                break;
             }
+            items.add(this.parseParam());
+            if (this.match(TokenType.RPAREN)) {
+                break;
+            }
+            this.expect(TokenType.COMMA);
         }
         this.expect(TokenType.RPAREN);
         return this.finishNode(startState, new FormalParameters(ImmutableList.from(items).map(this::bindingToParameter), Maybe.fromNullable(rest)));
@@ -1721,10 +1719,7 @@ public abstract class GenericParser<AdditionalStateT> extends Tokenizer {
     protected Pair<ImmutableList<SpreadElementExpression>, Maybe<SourceLocation>> parseArguments() throws JsError {
         ArrayList<SpreadElementExpression> args = new ArrayList<>();
         Maybe<SourceLocation> locationFollowingFirstSpread = Maybe.empty();
-        while (true) {
-            if (this.match(TokenType.RPAREN) || this.eof()) {
-                return Pair.of(ImmutableList.from(args), locationFollowingFirstSpread);
-            }
+        while (!this.match(TokenType.RPAREN) && !this.eof()) {
             SpreadElementExpression arg;
             AdditionalStateT startState = this.startNode();
             if (this.eat(TokenType.ELLIPSIS)) {
@@ -1732,7 +1727,7 @@ public abstract class GenericParser<AdditionalStateT> extends Tokenizer {
                 if (locationFollowingFirstSpread.isNothing()) {
                     args.add(arg);
                     if (this.match(TokenType.RPAREN)) {
-                        return Pair.of(ImmutableList.from(args), locationFollowingFirstSpread);
+                        break;
                     }
                     locationFollowingFirstSpread = Maybe.of(this.getLocation());
                     this.expect(TokenType.COMMA);
@@ -1746,9 +1741,10 @@ public abstract class GenericParser<AdditionalStateT> extends Tokenizer {
                 arg = assignmentExpression.fromJust();
             }
             args.add(arg);
-            if (!this.eat(TokenType.COMMA)) {
+            if (this.match(TokenType.RPAREN)) {
                 break;
             }
+            this.expect(TokenType.COMMA);
         }
         return Pair.of(ImmutableList.from(args), locationFollowingFirstSpread);
     }
@@ -2097,6 +2093,16 @@ public abstract class GenericParser<AdditionalStateT> extends Tokenizer {
         boolean mustBeArrowParameterList = false;
 
         while (this.eat(TokenType.COMMA)) {
+            if (this.match(TokenType.RPAREN)) {
+                if (!this.isBindingElement) {
+                    throw this.createUnexpected(this.lookahead);
+                }
+                if (this.firstExprError == null) {
+                    this.firstExprError = this.createUnexpected(this.lookahead);
+                }
+                group = null;
+                break;
+            }
             this.isAssignmentTarget = false;
             if (this.match(TokenType.ELLIPSIS)) {
                 if (!this.isBindingElement) {
